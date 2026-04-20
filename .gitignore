@@ -1,0 +1,53 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- OS/editor noise ---
+.DS_Store
+.idea/
+.vscode/
+
+# --- Logs / temp ---
+*.log
+tmp/
+temp/
+
+# --- ML artifacts ---
+checkpoints/
+models/
+artifacts/
+runs/
+wandb/
+mlruns/
+tensorboard/
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# --- Hugging Face caches ---
+.cache/
+.huggingface/
+hf_cache/
+
+# --- Data policy ---
+data/raw/
+data/interim/
+
+# --- Results policy ---
+results/*
+!results/metrics_baseline_vs_pretrained_seed_42.csv
+!results/metrics_baseline_vs_pretrained_seed_42_swept.csv
+!results/README.md

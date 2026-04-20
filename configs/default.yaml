@@ -1,0 +1,11 @@
+data_csv: data/processed/promoters_demo.csv
+model_id: InstaDeepAI/nucleotide-transformer-v2-50m-multi-species
+batch_size: 8
+epochs: 3
+lr: 0.001
+max_length: 256
+seed: 42
+device: auto
+out_csv: results/metrics_baseline_vs_pretrained.csv
+sweep_thresholds: false
+

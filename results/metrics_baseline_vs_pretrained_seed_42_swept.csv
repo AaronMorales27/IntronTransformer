@@ -1,0 +1,5 @@
+run_name,split,accuracy,f1,roc_auc,epochs,batch_size,lr,max_length,seed,selected_threshold,threshold_source,notes
+pretrained_frozen_head_only,val,0.833333,0.888889,0.800000,3,8,0.001,256,42,0.43,val_f1_sweep,"frozen backbone, trainable linear head only"
+pretrained_frozen_head_only,test,0.566667,0.711111,0.607656,3,8,0.001,256,42,0.43,val_f1_sweep,"frozen backbone, trainable linear head only"
+random_frozen_head_only,val,0.666667,0.800000,0.590000,3,8,0.001,256,42,0.05,val_f1_sweep,"frozen backbone, trainable linear head only"
+random_frozen_head_only,test,0.633333,0.775510,0.564593,3,8,0.001,256,42,0.05,val_f1_sweep,"frozen backbone, trainable linear head only"

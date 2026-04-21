@@ -108,6 +108,21 @@ Output:
 
 - `results/splice_metrics_comparison.csv`
 
+### Step 6 — Run `top4` across multiple seeds in one command
+
+```bash
+python scripts/run_splice_topn_seeds.py --config configs/splice.yaml --top_n 4 --seeds 42,43,44
+```
+
+Outputs:
+
+- Per-seed:
+  - `results/splice_partial_unfreeze_top4_seed_42.csv`
+  - `results/splice_partial_unfreeze_top4_seed_43.csv`
+  - `results/splice_partial_unfreeze_top4_seed_44.csv`
+- Combined:
+  - `results/splice_partial_unfreeze_top4_combined.csv`
+
 ## How to read the output
 
 For each run, compare `val` and `test` on:

@@ -1,0 +1,12 @@
+data_csv: data/processed/splice_donors_nt_revised.csv
+model_id: InstaDeepAI/nucleotide-transformer-v2-50m-multi-species
+batch_size: 8
+epochs: 1
+lr: 0.001
+max_length: 600
+seed: 42
+device: auto
+out_csv: results/splice_metrics_baseline_vs_pretrained.csv
+# Val split comes from prepare_splice_data.py (stratified carve from HF train);
+# sweep picks prob threshold on val (max F1), then evaluates val/test with it.
+sweep_thresholds: true

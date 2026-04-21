@@ -1,0 +1,11 @@
+# Tiny CSV from: python scripts/prepare_splice_data.py --smoke
+data_csv: data/processed/splice_donors_smoke.csv
+model_id: InstaDeepAI/nucleotide-transformer-v2-50m-multi-species
+batch_size: 8
+epochs: 1
+lr: 0.001
+max_length: 600
+seed: 42
+device: auto
+out_csv: results/splice_smoke_metrics.csv
+sweep_thresholds: true

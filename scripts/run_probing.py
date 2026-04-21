@@ -21,7 +21,13 @@ if str(ROOT) not in sys.path:
 
 from src.pipeline.config import ExperimentConfig
 from src.pipeline.data import build_dataloaders, read_split_rows, validate_splits
-from src.pipeline.modeling import FrozenBackboneClassifier, make_backbone
+from src.pipeline.modeling import (
+    FrozenBackboneClassifier,
+    count_trainable_params,
+    make_backbone,
+    set_trainable_params,
+)
+from src.pipeline.train import train_head_only
 
 
 def parse_args() -> argparse.Namespace:
@@ -37,12 +43,31 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=None)
     p.add_argument("--max_length", type=int, default=None)
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--epochs", type=int, default=1, help="Epochs used before probing when unfreezing.")
+    p.add_argument("--lr", type=float, default=1e-3, help="Learning rate used before probing when unfreezing.")
     p.add_argument(
         "--device",
         type=str,
         default=None,
         choices=["auto", "cpu", "cuda", "mps"],
         help="Compute device. auto picks cuda > mps > cpu.",
+    )
+    p.add_argument(
+        "--tune_mode",
+        type=str,
+        default="frozen_head_only",
+        choices=["frozen_head_only", "partial_unfreeze"],
+        help=(
+            "Backbone state to probe. "
+            "'frozen_head_only' probes raw pretrained frozen layers. "
+            "'partial_unfreeze' first trains with top-N layers unfrozen, then probes."
+        ),
+    )
+    p.add_argument(
+        "--unfreeze_top_n",
+        type=int,
+        default=0,
+        help="For partial_unfreeze mode, number of top transformer layers to unfreeze.",
     )
     p.add_argument("--out_csv", type=Path, default=Path("results/probe_scores.csv"))
     p.add_argument("--out_png", type=Path, default=Path("results/fig_probe_layerwise.png"))
@@ -303,8 +328,36 @@ def main() -> int:
         max_length=cfg.max_length,
     )
 
-    backbone, _ = make_backbone(model_id=cfg.model_id, pretrained=True)
+    backbone, hidden_size = make_backbone(model_id=cfg.model_id, pretrained=True)
     backbone = backbone.to(device)
+
+    if args.tune_mode == "partial_unfreeze":
+        if args.unfreeze_top_n <= 0:
+            raise ValueError("partial_unfreeze probing requires --unfreeze_top_n > 0")
+        print(
+            f"[step] adapting backbone before probing: tune_mode={args.tune_mode} "
+            f"unfreeze_top_n={args.unfreeze_top_n} epochs={args.epochs} lr={args.lr}"
+        )
+        warmup_model = FrozenBackboneClassifier(backbone=backbone, hidden_size=hidden_size, num_classes=2)
+        unfrozen = set_trainable_params(
+            model=warmup_model,
+            tune_mode=args.tune_mode,
+            unfreeze_top_n=args.unfreeze_top_n,
+        )
+        trainable = count_trainable_params(warmup_model)
+        print(f"[step] unfrozen_layers={unfrozen} trainable_params={trainable}")
+        train_head_only(
+            model=warmup_model,
+            train_loader=loaders["train"],
+            val_loader=loaders["val"],
+            device=device,
+            epochs=args.epochs,
+            lr=args.lr,
+        )
+        backbone = warmup_model.backbone
+        backbone.eval()
+    else:
+        print("[step] probing frozen pretrained backbone (no adaptation phase)")
 
     print("[step] extracting train layer embeddings")
     x_train_by_layer, y_train = extract_layerwise_features(backbone=backbone, loader=loaders["train"], device=device)
@@ -358,7 +411,10 @@ def main() -> int:
                     "f1": f"{metrics['f1']:.6f}",
                     "roc_auc": f"{metrics['roc_auc']:.6f}",
                     "num_examples": len(y_test),
-                    "notes": "pretrained frozen backbone + logistic regression probe (per-seed)",
+                    "notes": (
+                        "layerwise logistic-regression probe; "
+                        f"tune_mode={args.tune_mode}; unfreeze_top_n={args.unfreeze_top_n}; per-seed"
+                    ),
                 }
             )
 

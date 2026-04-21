@@ -20,7 +20,12 @@ from transformers import AutoTokenizer
 from src.pipeline.config import ExperimentConfig
 from src.pipeline.data import build_dataloaders, read_split_rows, validate_splits
 from src.pipeline.evaluate import collect_labels_and_probs, evaluate, select_threshold_max_f1
-from src.pipeline.modeling import FrozenBackboneClassifier, count_trainable_params, make_backbone
+from src.pipeline.modeling import (
+    FrozenBackboneClassifier,
+    count_trainable_params,
+    make_backbone,
+    set_trainable_params,
+)
 from src.pipeline.train import train_head_only
 
 
@@ -45,6 +50,30 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--out_csv", type=Path, default=None)
     p.add_argument(
+        "--tune_mode",
+        type=str,
+        default=None,
+        choices=["frozen_head_only", "partial_unfreeze"],
+        help="Training mode: head-only or unfreeze top N backbone blocks.",
+    )
+    p.add_argument(
+        "--unfreeze_top_n",
+        type=int,
+        default=None,
+        help="For partial_unfreeze mode, number of top transformer blocks to unfreeze.",
+    )
+    p.add_argument(
+        "--ladder_top_n",
+        type=str,
+        default=None,
+        help="Comma-separated unfreeze ladder, e.g. '1,2,4'. Runs frozen + each top-N setting.",
+    )
+    p.add_argument(
+        "--include_random_anchor",
+        action="store_true",
+        help="Also run random-initialized anchor for the selected mode(s).",
+    )
+    p.add_argument(
         "--sweep_thresholds",
         action="store_true",
         help="Pick threshold from validation split by maximizing F1.",
@@ -68,8 +97,28 @@ def resolve_config(args: argparse.Namespace) -> ExperimentConfig:
             "device": args.device,
             "out_csv": args.out_csv,
             "sweep_thresholds": True if args.sweep_thresholds else None,
+            "tune_mode": args.tune_mode,
+            "unfreeze_top_n": args.unfreeze_top_n,
+            "ladder_top_n": args.ladder_top_n,
+            "include_random_anchor": True if args.include_random_anchor else None,
         }
     )
+
+
+def parse_ladder(raw: str) -> List[int]:
+    vals: List[int] = []
+    for part in raw.split(","):
+        s = part.strip()
+        if not s:
+            continue
+        n = int(s)
+        if n <= 0:
+            raise ValueError(f"ladder_top_n entries must be > 0, got {n}")
+        vals.append(n)
+    dedup = sorted(set(vals))
+    if not dedup:
+        raise ValueError("ladder_top_n is empty; expected values like '1,2,4'")
+    return dedup
 
 
 def set_seed(seed: int) -> None:
@@ -123,8 +172,17 @@ def run_experiment(
     pretrained = run_name.startswith("pretrained")
     backbone, hidden_size = make_backbone(model_id=cfg.model_id, pretrained=pretrained)
     model = FrozenBackboneClassifier(backbone=backbone, hidden_size=hidden_size, num_classes=2)
+    unfrozen_layers = set_trainable_params(
+        model=model,
+        tune_mode=cfg.tune_mode,
+        unfreeze_top_n=cfg.unfreeze_top_n,
+    )
     trainable = count_trainable_params(model)
-    print(f"[run] {run_name} trainable_params={trainable}")
+    print(
+        f"[run] {run_name} mode={cfg.tune_mode} "
+        f"unfreeze_top_n={cfg.unfreeze_top_n} unfrozen_layers={unfrozen_layers} "
+        f"trainable_params={trainable}"
+    )
 
     train_head_only(
         model=model,
@@ -162,7 +220,10 @@ def run_experiment(
                 "seed": cfg.seed,
                 "selected_threshold": f"{selected_threshold:.2f}",
                 "threshold_source": threshold_source,
-                "notes": "frozen backbone, trainable linear head only",
+                "notes": (
+                    f"tune_mode={cfg.tune_mode}; unfreeze_top_n={cfg.unfreeze_top_n}; "
+                    "mean-pooled linear classifier"
+                ),
             }
         )
     return rows
@@ -195,8 +256,39 @@ def main() -> int:
     )
 
     all_rows: List[Dict[str, object]] = []
-    all_rows.extend(run_experiment("pretrained_frozen_head_only", cfg=cfg, loaders=loaders, device=device))
-    all_rows.extend(run_experiment("random_frozen_head_only", cfg=cfg, loaders=loaders, device=device))
+    if cfg.ladder_top_n.strip():
+        ladder = parse_ladder(cfg.ladder_top_n)
+        base_cfg = cfg.with_overrides({"tune_mode": "frozen_head_only", "unfreeze_top_n": 0})
+        all_rows.extend(run_experiment("pretrained_frozen_head_only", cfg=base_cfg, loaders=loaders, device=device))
+        for n in ladder:
+            step_cfg = cfg.with_overrides({"tune_mode": "partial_unfreeze", "unfreeze_top_n": n})
+            all_rows.extend(
+                run_experiment(f"pretrained_partial_unfreeze_top{n}", cfg=step_cfg, loaders=loaders, device=device)
+            )
+        if cfg.include_random_anchor:
+            all_rows.extend(run_experiment("random_frozen_head_only", cfg=base_cfg, loaders=loaders, device=device))
+    elif cfg.tune_mode == "partial_unfreeze" and cfg.unfreeze_top_n > 0:
+        all_rows.extend(
+            run_experiment(
+                f"pretrained_partial_unfreeze_top{cfg.unfreeze_top_n}",
+                cfg=cfg,
+                loaders=loaders,
+                device=device,
+            )
+        )
+        if cfg.include_random_anchor:
+            all_rows.extend(
+                run_experiment(
+                    f"random_partial_unfreeze_top{cfg.unfreeze_top_n}",
+                    cfg=cfg,
+                    loaders=loaders,
+                    device=device,
+                )
+            )
+    else:
+        all_rows.extend(run_experiment("pretrained_frozen_head_only", cfg=cfg, loaders=loaders, device=device))
+        if cfg.include_random_anchor:
+            all_rows.extend(run_experiment("random_frozen_head_only", cfg=cfg, loaders=loaders, device=device))
 
     write_metrics(cfg.out_csv, all_rows)
     print(f"[done] wrote metrics: {cfg.out_csv}")

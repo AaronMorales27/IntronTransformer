@@ -18,7 +18,7 @@ def train_head_only(
 ) -> None:
     model.to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.classifier.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=lr)
 
     for epoch in range(1, epochs + 1):
         model.train()

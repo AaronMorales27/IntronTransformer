@@ -22,6 +22,10 @@ class ExperimentConfig:
     device: str = "auto"
     out_csv: Path = Path("results/metrics_baseline_vs_pretrained.csv")
     sweep_thresholds: bool = False # 0.5 is the default threshold
+    tune_mode: str = "frozen_head_only"
+    unfreeze_top_n: int = 0
+    ladder_top_n: str = ""
+    include_random_anchor: bool = False
 
     @staticmethod
     def defaults() -> "ExperimentConfig":
@@ -60,6 +64,10 @@ class ExperimentConfig:
             device=str(merged["device"]),
             out_csv=Path(merged["out_csv"]),
             sweep_thresholds=bool(merged["sweep_thresholds"]),
+            tune_mode=str(merged["tune_mode"]),
+            unfreeze_top_n=int(merged["unfreeze_top_n"]),
+            ladder_top_n=str(merged["ladder_top_n"]),
+            include_random_anchor=bool(merged["include_random_anchor"]),
         )
 
     def with_overrides(self, overrides: Dict[str, Any]) -> "ExperimentConfig":

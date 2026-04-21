@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
 import torch.nn as nn
@@ -51,6 +51,66 @@ class FrozenBackboneClassifier(nn.Module):
         last_hidden_state = out.hidden_states[-1]
         seq_embedding = self.masked_mean(last_hidden_state, attention_mask)
         return self.classifier(seq_embedding)
+
+
+def _find_transformer_blocks(backbone: nn.Module) -> List[nn.Module]:
+    """
+    Best-effort lookup of encoder block stack across common HF model layouts.
+    """
+    candidates = [
+        ("base_model", "encoder", "layer"),
+        ("bert", "encoder", "layer"),
+        ("roberta", "encoder", "layer"),
+        ("encoder", "layer"),
+        ("transformer", "layer"),
+        ("layers",),
+        ("h",),
+    ]
+    for path in candidates:
+        node = backbone
+        ok = True
+        for attr in path:
+            if not hasattr(node, attr):
+                ok = False
+                break
+            node = getattr(node, attr)
+        if ok and isinstance(node, (list, nn.ModuleList)) and len(node) > 0:
+            return list(node)
+    return []
+
+
+def set_trainable_params(
+    model: FrozenBackboneClassifier,
+    tune_mode: str,
+    unfreeze_top_n: int,
+) -> List[int]:
+    """
+    Configure trainable parameters for transfer-learning mode.
+
+    Returns indices of backbone blocks that were unfrozen.
+    """
+    for p in model.backbone.parameters():
+        p.requires_grad = False
+    for p in model.classifier.parameters():
+        p.requires_grad = True
+
+    if tune_mode == "frozen_head_only":
+        return []
+    if tune_mode != "partial_unfreeze":
+        raise ValueError(f"Unknown tune_mode: {tune_mode}")
+    if unfreeze_top_n <= 0:
+        raise ValueError("partial_unfreeze requires unfreeze_top_n > 0")
+
+    blocks = _find_transformer_blocks(model.backbone)
+    if not blocks:
+        raise ValueError("Could not locate transformer block stack for partial unfreeze.")
+
+    n = min(unfreeze_top_n, len(blocks))
+    start = len(blocks) - n
+    for block in blocks[start:]:
+        for p in block.parameters():
+            p.requires_grad = True
+    return list(range(start, len(blocks)))
 
 
 def make_backbone(model_id: str, pretrained: bool) -> Tuple[nn.Module, int]:

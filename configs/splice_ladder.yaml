@@ -6,11 +6,9 @@ lr: 0.001
 max_length: 600
 seed: 42
 device: auto
-out_csv: results/splice_metrics_baseline_vs_pretrained.csv
-# Val split comes from prepare_splice_data.py (stratified carve from HF train);
-# sweep picks prob threshold on val (max F1), then evaluates val/test with it.
+out_csv: results/splice_metrics_comparison.csv
 sweep_thresholds: true
 tune_mode: frozen_head_only
 unfreeze_top_n: 0
-ladder_top_n: ""
-include_random_anchor: false
+ladder_top_n: "1,2,4"
+include_random_anchor: true

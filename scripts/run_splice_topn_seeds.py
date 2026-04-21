@@ -48,6 +48,12 @@ def parse_args() -> argparse.Namespace:
         default="splice_partial_unfreeze_top",
         help="Output filename prefix.",
     )
+    p.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Optional batch size override passed to train_classifier.",
+    )
     return p.parse_args()
 
 
@@ -64,7 +70,13 @@ def parse_seeds(raw: str) -> List[int]:
     return uniq
 
 
-def run_one_seed(config: Path, top_n: int, seed: int, out_csv: Path) -> None:
+def run_one_seed(
+    config: Path,
+    top_n: int,
+    seed: int,
+    out_csv: Path,
+    batch_size: int | None,
+) -> None:
     cmd = [
         sys.executable,
         "scripts/train_classifier.py",
@@ -79,6 +91,8 @@ def run_one_seed(config: Path, top_n: int, seed: int, out_csv: Path) -> None:
         "--unfreeze_top_n",
         str(top_n),
     ]
+    if batch_size is not None:
+        cmd.extend(["--batch_size", str(batch_size)])
     print(f"[grid] running seed={seed} top_n={top_n} -> {out_csv}")
     subprocess.run(cmd, check=True)
 
@@ -110,7 +124,13 @@ def main() -> int:
     per_seed_paths: List[Path] = []
     for seed in seeds:
         out_csv = args.out_dir / f"{args.prefix}{args.top_n}_seed_{seed}.csv"
-        run_one_seed(config=args.config, top_n=args.top_n, seed=seed, out_csv=out_csv)
+        run_one_seed(
+            config=args.config,
+            top_n=args.top_n,
+            seed=seed,
+            out_csv=out_csv,
+            batch_size=args.batch_size,
+        )
         per_seed_paths.append(out_csv)
 
     combined_out = args.out_dir / f"{args.prefix}{args.top_n}_combined.csv"
